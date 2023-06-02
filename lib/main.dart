@@ -1,25 +1,29 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
+import 'package:flutter/rendering.dart';
 
 void main() {
-  runApp(const ChatAppConversationView());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-        title: 'Flutter Demo',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-        ),
-        home: const ChatAppConversationView());
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Chat message RenderBox',
+      home: ChatAppConversationView(),
+    );
   }
 }
 
+/// A full-screen widget which vaguely resembles a chat app's conversation view.
+///
+/// The main purpose of the [ChatAppConversationView] class is to feed the value
+/// from a [TextEditingController] into a [TimestampedChatMessage] widget. The
+/// [TimestampedChatMessage] is the real star of the show.
 class ChatAppConversationView extends StatefulWidget {
   const ChatAppConversationView({super.key});
 
@@ -30,12 +34,14 @@ class ChatAppConversationView extends StatefulWidget {
 
 class _ChatAppConversationViewState extends State<ChatAppConversationView> {
   final TextEditingController _controller = TextEditingController();
-  final String sentAt = "3 seconds ago";
+  final String sentAt = '3 seconds ago';
 
   @override
   void initState() {
     super.initState();
-    _controller.text = "Hello, World!";
+    _controller.text =
+        'Hello?! this is a message! If you read it for long enough, '
+        'your brain will grow';
   }
 
   @override
@@ -47,31 +53,34 @@ class _ChatAppConversationViewState extends State<ChatAppConversationView> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              (_controller.text != "")
+              (_controller.text != '')
                   ? Align(
                       alignment: Alignment.centerRight,
                       child: Container(
                         color: Colors.blue[100]!,
                         padding: const EdgeInsets.all(15),
+                        // ListenableBuilder is available in Flutter 3.10
                         child: ValueListenableBuilder(
                           valueListenable: _controller,
                           builder:
                               (BuildContext context, value, Widget? child) {
                             return TimestampedChatMessage(
-                                text: _controller.text,
-                                sentAt: '2 minutes ago',
-                                style: const TextStyle(color: Colors.red));
+                              text: _controller.text,
+                              sentAt: sentAt,
+                              style: const TextStyle(color: Colors.red),
+                            );
                           },
                         ),
                       ),
                     )
                   : Container(),
+              const SizedBox(height: 50),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 25),
                 child: TextField(
                   controller: _controller,
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -80,186 +89,599 @@ class _ChatAppConversationViewState extends State<ChatAppConversationView> {
   }
 }
 
+/// Simplified variant of the [Text] widget which accepts both a primary string
+/// for the raw text body, and a secondary `sentAt` string which annotates the
+/// former with a timestamp, similar to how popular chat apps like WhatsApp
+/// render individual messages.
+///
+/// The [TimestampedChatMessage] extends [LeafRenderObjectWidget], which means
+/// it has no children and instead creates a [TimestampedChatMessageRenderObject],
+/// which handles all layout and painting itself.
 class TimestampedChatMessage extends LeafRenderObjectWidget {
-  const TimestampedChatMessage(
-      {super.key,
-      required this.text,
-      required this.sentAt,
-      required this.style});
+  const TimestampedChatMessage({
+    super.key,
+    required this.text,
+    required this.sentAt,
+    this.style,
+  });
+
   final String text;
   final String sentAt;
-  final TextStyle style;
+  final TextStyle? style;
 
   @override
   RenderObject createRenderObject(BuildContext context) {
+    final DefaultTextStyle defaultTextStyle = DefaultTextStyle.of(context);
+    TextStyle? effectiveTextStyle = style;
+    if (style == null || style!.inherit) {
+      effectiveTextStyle = defaultTextStyle.style.merge(style);
+    }
     return TimestampedChatMessageRenderObject(
       text: text,
       sentAt: sentAt,
-      style: style,
       textDirection: Directionality.of(context),
+      textStyle: effectiveTextStyle!,
+      sentAtStyle: effectiveTextStyle.copyWith(color: Colors.grey),
     );
   }
 
   @override
   void updateRenderObject(
-      BuildContext context, TimestampedChatMessageRenderObject renderObject) {
+    BuildContext context,
+    TimestampedChatMessageRenderObject renderObject,
+  ) {
+    final DefaultTextStyle defaultTextStyle = DefaultTextStyle.of(context);
+    TextStyle? effectiveTextStyle = style;
+    if (style == null || style!.inherit) {
+      effectiveTextStyle = defaultTextStyle.style.merge(style);
+    }
     renderObject.text = text;
+    renderObject.textStyle = effectiveTextStyle!;
+
     renderObject.sentAt = sentAt;
-    renderObject.style = style;
+    renderObject.sentAtStyle = effectiveTextStyle.copyWith(color: Colors.grey);
+
     renderObject.textDirection = Directionality.of(context);
   }
 }
 
+/// Simplified variant of [RenderParagraph] which supports the
+/// [TimestampedChatMessage] widget.
+///
+/// Like the [Text] widget and its inner [RenderParagraph], the
+/// [TimestampedChatMessageRenderObject] makes heavy use of the [TextPainter]
+/// class.
 class TimestampedChatMessageRenderObject extends RenderBox {
   TimestampedChatMessageRenderObject({
-    required String text,
     required String sentAt,
-    required TextStyle style,
+    required String text,
+    required TextStyle sentAtStyle,
+    required TextStyle textStyle,
     required TextDirection textDirection,
   }) {
     _text = text;
     _sentAt = sentAt;
-    _style = style;
+    _textStyle = textStyle;
+    _sentAtStyle = sentAtStyle;
     _textDirection = textDirection;
-    _textPainter =
-        TextPainter(text: textTextSpan, textDirection: _textDirection);
-    _sentAtTextPainter =
-        TextPainter(text: sentAtTextSpan, textDirection: _textDirection);
+    _textPainter = TextPainter(
+      text: textTextSpan,
+      textDirection: _textDirection,
+    );
+    _sentAtTextPainter = TextPainter(
+      text: sentAtTextSpan,
+      textDirection: _textDirection,
+    );
   }
+
+  late TextDirection _textDirection;
   late String _text;
   late String _sentAt;
-  late TextStyle _style;
-  late TextDirection _textDirection;
   late TextPainter _textPainter;
   late TextPainter _sentAtTextPainter;
-
-  String get text => _text;
-  set text(String val) {
-    if (val == _text) {
-      return;
-    }
-    val = _text;
-    _textPainter.text = textTextSpan;
-    markNeedsLayout();
-    markNeedsSemanticsUpdate();
-  }
-
-  String get sentAt => _text;
-  set sentAt(String val) {
-    if (val == _sentAt) {
-      return;
-    }
-    val = _sentAt;
-    _sentAtTextPainter.text = sentAtTextSpan;
-    markNeedsLayout();
-    markNeedsSemanticsUpdate();
-  }
-
-  TextStyle get style => _style;
-  set style(TextStyle val) {
-    if (val == _style) {
-      return;
-    }
-    _style = val;
-    _textPainter.text = textTextSpan;
-    _sentAtTextPainter.text = sentAtTextSpan;
-    markNeedsLayout();
-  }
-
-  TextDirection get textDirection => _textDirection;
-  set textDirection(TextDirection val) {
-    if (val == _textDirection) {
-      return;
-    }
-    _textDirection = val;
-    _textPainter.textDirection = _textDirection;
-    _sentAtTextPainter.textDirection = _textDirection;
-  }
-
-  //Saved values from performLayout used in paint
+  late TextStyle _sentAtStyle;
+  late TextStyle _textStyle;
   late bool _sentAtFitsOnLastLine;
   late double _lineHeight;
   late double _lastMessageLineWidth;
-  late double _longestLineWidth;
+  double _longestLineWidth = 0;
   late double _sentAtLineWidth;
   late int _numMessageLines;
 
-  TextSpan get textTextSpan => TextSpan(text: _text, style: _style);
-  TextSpan get sentAtTextSpan => TextSpan(
-        text: _sentAt,
-        style: _style.copyWith(color: Colors.grey),
-      );
+  set sentAt(String val) {
+    if (val == _sentAt) return;
+    _sentAt = val;
+    // `sentAtTextSpan` is a computed property that incorporates both the raw
+    // string value and the [TextStyle], so we have to update the whole [TextSpan]
+    // any time either value is updated.
+    _sentAtTextPainter.text = sentAtTextSpan;
+    markNeedsLayout();
+
+    // Because changing any text in our widget will definitely change the
+    // semantic meaning of this piece of our UI, we need to call
+    markNeedsSemanticsUpdate();
+  }
+
+  set sentAtStyle(TextStyle val) {
+    if (val == _sentAtStyle) return;
+    _sentAtStyle = val;
+    // `sentAtTextSpan` is a computed property that incorporates both the raw
+    // string value and the [TextStyle], so we have to update the whole [TextSpan]
+    // any time either value is updated.
+    _sentAtTextPainter.text = sentAtTextSpan;
+    markNeedsLayout();
+  }
+
+  String get text => _text;
+  set text(String val) {
+    if (val == _text) return;
+    _text = val;
+    _textPainter.text = textTextSpan;
+    markNeedsLayout();
+    // Because changing any text in our widget will definitely change the
+    // semantic meaning of this piece of our UI, we need to call
+    markNeedsSemanticsUpdate();
+  }
+
+  TextStyle get textStyle => _textStyle;
+  set textStyle(TextStyle val) {
+    if (val == _textStyle) return;
+    _textStyle = val;
+    _textPainter.text = textTextSpan;
+
+    // If we knew that the new [TextStyle] had only changed in certain ways (e.g.
+    // color) then we could be more performant and call `markNeedsPaint()` instead.
+    // However, without carefully making that assessment, it is safer to call
+    // the more generic method, `markNeedsLayout()` instead (which also implies
+    // a repaint).
+    markNeedsLayout();
+  }
+
+  set textDirection(TextDirection val) {
+    if (_textDirection == val) {
+      return;
+    }
+    _textPainter.textDirection = val;
+    _sentAtTextPainter.textDirection = val;
+    markNeedsSemanticsUpdate();
+  }
+
+  TextSpan get textTextSpan => TextSpan(text: _text, style: _textStyle);
+  TextSpan get sentAtTextSpan => TextSpan(text: _sentAt, style: _sentAtStyle);
+
+  @override
+  void describeSemanticsConfiguration(SemanticsConfiguration config) {
+    super.describeSemanticsConfiguration(config);
+    // Set this to `true` because individual chat bubbles are perfectly
+    // self-contained semantic objects.
+    config.isSemanticBoundary = true;
+
+    config.label = '$_text, sent $_sentAt';
+    config.textDirection = _textDirection;
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) {
+    // Ignore `height` parameter because chat bubbles' height grows as a
+    // function of available width and text length.
+
+    _layoutText(double.infinity);
+    return _longestLineWidth;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      computeMaxIntrinsicHeight(width);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) {
+    final computedSize = _layoutText(width);
+    return computedSize.height;
+  }
 
   @override
   void performLayout() {
-    // final childrenSize = child.layout;  <= not required for leaf nodes
-    _textPainter.layout(
-        maxWidth: constraints.maxWidth); //textpainter to know its size
+    final unconstrainedSize = _layoutText(constraints.maxWidth);
+    size = constraints.constrain(
+      Size(unconstrainedSize.width, unconstrainedSize.height),
+    );
+  }
+
+  /// Lays out the text within a given width constraint and returns its [Size].
+  ///
+  /// Because [_layoutText] is called from multiple places with multiple concerns,
+  /// like intrinsics which could have different width parameters than a typical
+  /// layout, this logic is moved out of `performLayout` and into a dedicated
+  /// method which accepts and works with any width constraint.
+  Size _layoutText(double maxWidth) {
+    // Draw nothing (requiring no size) if the string doesn't exist. This is one
+    // of many opinionated choices we could make here if the text is empty.
+    if (_textPainter.text?.toPlainText() == '') {
+      return Size.zero;
+    }
+    assert(
+      maxWidth > 0,
+      'You must allocate SOME space to layout a TimestampedChatMessageRenderObject. Received a '
+      '`maxWidth` value of $maxWidth.',
+    );
+
+    // Layout the raw message, which saves expected high-level sizing values
+    // to the painter itself.
+    _textPainter.layout(maxWidth: maxWidth);
     final textLines = _textPainter.computeLineMetrics();
 
-    // Repeat for '_sentAtTextPainter'
-    _sentAtTextPainter.layout(maxWidth: constraints.maxWidth);
+    // Now make similar calculations for `sentAt`.
+    _sentAtTextPainter.layout(maxWidth: maxWidth);
     _sentAtLineWidth = _sentAtTextPainter.computeLineMetrics().first.width;
 
+    // Reset cached values from the last frame if they're assumed to start at 0.
+    // (Because this is used in `max`, if it opens a new frame still holding the
+    // value from a previous frame, we could fail to accurately calculate the
+    // longest line.)
     _longestLineWidth = 0;
+
+    // Next, we calculate a few metrics for the height and width of the message.
+
+    // First, chat messages don't actually grow to their full available width
+    // if their longest line does not require it. Thus, we need to note the
+    // longest line in the message.
     for (final line in textLines) {
       _longestLineWidth = max(_longestLineWidth, line.width);
     }
+    // If the message is very short, it's possible that the longest line is
+    // is actually the date.
+    _longestLineWidth = max(_longestLineWidth, _sentAtTextPainter.width);
+
+    // Because [_textPainter.width] can be the maximum width we passed to it,
+    // even if the longest line is shorter, we use this logic to determine its
+    // real size, for our purposes.
+    final sizeOfMessage = Size(_longestLineWidth, _textPainter.height);
+
+    // Cache additional variables used both in the rest of this method and in
+    // `paint` later on.
     _lastMessageLineWidth = textLines.last.width;
     _lineHeight = textLines.last.height;
     _numMessageLines = textLines.length;
 
-    final sizeOfMessage = Size(_longestLineWidth, _textPainter.height);
-
-    // Set '_sentAtFitsOnLastLine'
-    final lastLineWithDate = _lastMessageLineWidth + (_sentAtLineWidth * 1.1);
-
+    // Determine whether the message's last line and the date can share a
+    // horizontal row together.
+    final lastLineWithDate = _lastMessageLineWidth + (_sentAtLineWidth * 1.08);
     if (textLines.length == 1) {
-      _sentAtFitsOnLastLine = lastLineWithDate < constraints.maxWidth;
+      _sentAtFitsOnLastLine = lastLineWithDate < maxWidth;
     } else {
       _sentAtFitsOnLastLine =
-          lastLineWithDate < min(_longestLineWidth, constraints.maxWidth);
+          lastLineWithDate < min(_longestLineWidth, maxWidth);
     }
 
     late Size computedSize;
     if (!_sentAtFitsOnLastLine) {
       computedSize = Size(
+        // If `sentAt` does not fit on the longest line, then we know the
+        // message contains a long line, making this a safe value for `width`.
         sizeOfMessage.width,
+        // And similarly, if `sentAt` does not fit, we know to add its height
+        // to the overall size of just-the-message.
         sizeOfMessage.height + _sentAtTextPainter.height,
       );
     } else {
+      // Moving forward, of course, we know that `sentAt` DOES fit into the last
+      // line.
+
       if (textLines.length == 1) {
-        computedSize = Size(lastLineWithDate, sizeOfMessage.height);
+        computedSize = Size(
+          // When there is only 1 line, our width calculations are in a special
+          // case of needing as many pixels as our line plus the date, as opposed
+          // to the full size of the longest line.
+          lastLineWithDate,
+          sizeOfMessage.height,
+        );
       } else {
-        computedSize = Size(_longestLineWidth, sizeOfMessage.height);
+        computedSize = Size(
+          // But when there's more than 1 line, our width should be equal to the
+          // longest line.
+          _longestLineWidth,
+          sizeOfMessage.height,
+        );
       }
     }
-    constraints.constrain(computedSize);
+    return computedSize;
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    // Draw nothing (requiring no paint calls) if the string doesn't exist. This
+    // is one of many opinionated choices we could make here if the text is empty.
+    if (_textPainter.text?.toPlainText() == '') {
+      return;
+    }
+
+    // This line writes the actual message to the screen. Because we use the
+    // same offset we were passed, the text will appear in the upper-left corner
+    // of our available space.
     _textPainter.paint(context.canvas, offset);
 
     late Offset sentAtOffset;
     if (_sentAtFitsOnLastLine) {
-      print('x=> ${offset.dx} + ${size.width} - $_sentAtLineWidth');
-      print('y=> ${offset.dy} + $_lineHeight + ${_numMessageLines - 1}');
-      sentAtOffset = Offset(offset.dx + (size.width - _sentAtLineWidth),
-          offset.dy + (_lineHeight * (_numMessageLines - 1)));
+      sentAtOffset = Offset(
+        offset.dx + (size.width - _sentAtLineWidth),
+        offset.dy + (_lineHeight * (_numMessageLines - 1)),
+      );
     } else {
-      sentAtOffset = Offset(offset.dx + (size.width - _sentAtLineWidth),
-          offset.dy + (size.height * _numMessageLines));
+      sentAtOffset = Offset(
+        offset.dx + (size.width - _sentAtLineWidth),
+        offset.dy + _lineHeight * _numMessageLines,
+      );
     }
 
+    // Finally, place the `sentAt` value accordingly.
     _sentAtTextPainter.paint(context.canvas, sentAtOffset);
   }
-
-  @override
-  void describeSemanticsConfiguration(SemanticsConfiguration config) {
-    super.describeSemanticsConfiguration(config);
-    config.isSemanticBoundary = true;
-    config.label = '$_text, sent at $_sentAt';
-    config.textDirection = _textDirection;
-  }
 }
+// import 'dart:math';
+// import 'package:flutter/material.dart';
+// import 'package:flutter/semantics.dart';
+//
+// void main() {
+//   runApp(const MyApp());
+// }
+//
+// class MyApp extends StatelessWidget {
+//   const MyApp({Key? key}) : super(key: key);
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return MaterialApp(
+//         title: 'Flutter Demo',
+//         theme: ThemeData(
+//           primarySwatch: Colors.blue,
+//         ),
+//         home: const ChatAppConversationView());
+//   }
+// }
+//
+// class ChatAppConversationView extends StatefulWidget {
+//   const ChatAppConversationView({super.key});
+//
+//   @override
+//   State<ChatAppConversationView> createState() =>
+//       _ChatAppConversationViewState();
+// }
+//
+// class _ChatAppConversationViewState extends State<ChatAppConversationView> {
+//   final TextEditingController _controller = TextEditingController();
+//   final String sentAt = "3 seconds ago";
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     _controller.text = "Hello, World!";
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       body: Center(
+//         child: SizedBox(
+//           height: MediaQuery.of(context).size.height,
+//           width: 220,
+//           child: Column(
+//             mainAxisAlignment: MainAxisAlignment.end,
+//             children: [
+//               (_controller.text != "")
+//                   ? Flexible(
+//                       child: Align(
+//                         alignment: Alignment.centerRight,
+//                         child: Container(
+//                           color: Colors.blue[100]!,
+//                           padding: const EdgeInsets.all(15),
+//                           child: ValueListenableBuilder(
+//                             valueListenable: _controller,
+//                             builder:
+//                                 (BuildContext context, value, Widget? child) {
+//                               return TimestampedChatMessage(
+//                                   text: _controller.text,
+//                                   sentAt: '2 minutes ago',
+//                                   style: const TextStyle(color: Colors.red));
+//                             },
+//                           ),
+//                         ),
+//                       ),
+//                     )
+//                   : Container(),
+//               Padding(
+//                 padding: const EdgeInsets.symmetric(vertical: 25),
+//                 child: TextField(
+//                   controller: _controller,
+//                 ),
+//               )
+//             ],
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+// }
+//
+// class TimestampedChatMessage extends LeafRenderObjectWidget {
+//   const TimestampedChatMessage(
+//       {super.key,
+//       required this.text,
+//       required this.sentAt,
+//       required this.style});
+//   final String text;
+//   final String sentAt;
+//   final TextStyle style;
+//
+//   @override
+//   RenderObject createRenderObject(BuildContext context) {
+//     return TimestampedChatMessageRenderObject(
+//       text: text,
+//       sentAt: sentAt,
+//       style: style,
+//       textDirection: Directionality.of(context),
+//     );
+//   }
+//
+//   @override
+//   void updateRenderObject(
+//       BuildContext context, TimestampedChatMessageRenderObject renderObject) {
+//     renderObject.text = text;
+//     renderObject.sentAt = sentAt;
+//     renderObject.style = style;
+//     renderObject.textDirection = Directionality.of(context);
+//   }
+// }
+//
+// class TimestampedChatMessageRenderObject extends RenderBox {
+//   TimestampedChatMessageRenderObject({
+//     required String text,
+//     required String sentAt,
+//     required TextStyle style,
+//     required TextDirection textDirection,
+//   }) {
+//     _text = text;
+//     _sentAt = sentAt;
+//     _style = style;
+//     _textDirection = textDirection;
+//     _textPainter =
+//         TextPainter(text: textTextSpan, textDirection: _textDirection);
+//     _sentAtTextPainter =
+//         TextPainter(text: sentAtTextSpan, textDirection: _textDirection);
+//   }
+//   late String _text;
+//   late String _sentAt;
+//   late TextStyle _style;
+//   late TextDirection _textDirection;
+//   late TextPainter _textPainter;
+//   late TextPainter _sentAtTextPainter;
+//
+//   String get text => _text;
+//   set text(String val) {
+//     if (val == _text) {
+//       return;
+//     }
+//     val = _text;
+//     _textPainter.text = textTextSpan;
+//     markNeedsLayout();
+//     markNeedsSemanticsUpdate();
+//   }
+//
+//   String get sentAt => _text;
+//   set sentAt(String val) {
+//     if (val == _sentAt) {
+//       return;
+//     }
+//     val = _sentAt;
+//     _sentAtTextPainter.text = sentAtTextSpan;
+//     markNeedsLayout();
+//     markNeedsSemanticsUpdate();
+//   }
+//
+//   TextStyle get style => _style;
+//   set style(TextStyle val) {
+//     if (val == _style) {
+//       return;
+//     }
+//     _style = val;
+//     _textPainter.text = textTextSpan;
+//     _sentAtTextPainter.text = sentAtTextSpan;
+//     markNeedsLayout();
+//   }
+//
+//   TextDirection get textDirection => _textDirection;
+//   set textDirection(TextDirection val) {
+//     if (val == _textDirection) {
+//       return;
+//     }
+//     _textDirection = val;
+//     _textPainter.textDirection = _textDirection;
+//     _sentAtTextPainter.textDirection = _textDirection;
+//   }
+//
+//   //Saved values from performLayout used in paint
+//   late bool _sentAtFitsOnLastLine;
+//   late double _lineHeight;
+//   late double _lastMessageLineWidth;
+//   late double _longestLineWidth;
+//   late double _sentAtLineWidth;
+//   late int _numMessageLines;
+//
+//   TextSpan get textTextSpan => TextSpan(text: _text, style: _style);
+//   TextSpan get sentAtTextSpan => TextSpan(
+//         text: _sentAt,
+//         style: _style.copyWith(color: Colors.grey),
+//       );
+//
+//   @override
+//   void performLayout() {
+//     // final childrenSize = child.layout;  <= not required for leaf nodes
+//     _textPainter.layout(
+//         maxWidth: constraints.maxWidth); //textpainter to know its size
+//     final textLines = _textPainter.computeLineMetrics();
+//
+//     // Repeat for '_sentAtTextPainter'
+//     _sentAtTextPainter.layout(maxWidth: constraints.maxWidth);
+//     _sentAtLineWidth = _sentAtTextPainter.computeLineMetrics().first.width;
+//
+//     _longestLineWidth = 0;
+//     for (final line in textLines) {
+//       _longestLineWidth = max(_longestLineWidth, line.width);
+//     }
+//     _lastMessageLineWidth = textLines.last.width;
+//     _lineHeight = textLines.last.height;
+//     _numMessageLines = textLines.length;
+//
+//     final sizeOfMessage = Size(_longestLineWidth, _textPainter.height);
+//
+//     // Set '_sentAtFitsOnLastLine'
+//     final lastLineWithDate = _lastMessageLineWidth + (_sentAtLineWidth * 1.1);
+//
+//     if (textLines.length == 1) {
+//       _sentAtFitsOnLastLine = lastLineWithDate < constraints.maxWidth;
+//     } else {
+//       _sentAtFitsOnLastLine =
+//           lastLineWithDate < min(_longestLineWidth, constraints.maxWidth);
+//     }
+//
+//     late Size computedSize;
+//     if (!_sentAtFitsOnLastLine) {
+//       computedSize = Size(
+//         sizeOfMessage.width,
+//         sizeOfMessage.height + _sentAtTextPainter.height,
+//       );
+//     } else {
+//       if (textLines.length == 1) {
+//         computedSize = Size(lastLineWithDate, sizeOfMessage.height);
+//       } else {
+//         computedSize = Size(_longestLineWidth, sizeOfMessage.height);
+//       }
+//     }
+//     constraints.constrain(computedSize);
+//   }
+//
+//   @override
+//   void paint(PaintingContext context, Offset offset) {
+//     _textPainter.paint(context.canvas, offset);
+//
+//     late Offset sentAtOffset;
+//     if (_sentAtFitsOnLastLine) {
+//       print('x=> ${offset.dx} + ${size.width} - $_sentAtLineWidth');
+//       print('y=> ${offset.dy} + $_lineHeight + ${_numMessageLines - 1}');
+//       sentAtOffset = Offset(offset.dx + (size.width - _sentAtLineWidth),
+//           offset.dy + (_lineHeight * (_numMessageLines - 1)));
+//     } else {
+//       sentAtOffset = Offset(offset.dx + (size.width - _sentAtLineWidth),
+//           offset.dy + (_lineHeight * _numMessageLines));
+//     }
+//
+//     _sentAtTextPainter.paint(context.canvas, sentAtOffset);
+//   }
+//
+//   @override
+//   void describeSemanticsConfiguration(SemanticsConfiguration config) {
+//     super.describeSemanticsConfiguration(config);
+//     config.isSemanticBoundary = true;
+//     config.label = '$_text, sent at $_sentAt';
+//     config.textDirection = _textDirection;
+//   }
+// }
